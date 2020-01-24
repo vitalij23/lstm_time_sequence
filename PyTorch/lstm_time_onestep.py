@@ -60,7 +60,7 @@ class Sequence(nn.Module):
 
 
 def main():
-    STEPS = 2
+    STEPS = 3
     # set random seed to 0
     np.random.seed(0)
     torch.manual_seed(0)
@@ -99,7 +99,7 @@ def main():
     seq = seq.to(device)  # GPU
     criterion = nn.MSELoss()
     # use LBFGS as optimizer since we can load the whole data to train
-    optimizer = optim.LBFGS(seq.parameters(), lr=0.3)
+    optimizer = optim.LBFGS(seq.parameters(), lr=0.2)  # call all input 20 times
     # begin to train
     for i in range(STEPS):
         print('STEP: ', i)
@@ -139,9 +139,7 @@ def main():
     print("batches:", len(data), len(data[0]), type(data), data.shape)
     # train = :sl
     # test = sl:
-    offset = 100
-    steps_before = 10
-    where = [1650]  # where predict
+    where = [200, 300, 400, 500, 600, 700, 800, 950]
     test_pred = []
     for w in where:
         t_p = data[w - 100:w + 10, :]

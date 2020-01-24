@@ -1,6 +1,12 @@
 import csv
 import numpy as np
 import torch
+from savitzky_golay import savitzky_golay
+import matplotlib.pyplot as plt
+
+import matplotlib
+
+matplotlib.use('TkAgg')
 
 
 def strict_windows(arr: list, batch_num=200) -> list:
@@ -68,7 +74,7 @@ def my_scaler(data: np.array) -> np.array:
     """
 
     # data = scaler(data, axis=0)
-    smoothing_window_size = data.shape[0]//2  # for 10000 - 4
+    smoothing_window_size = data.shape[0] #// 2  # for 10000 - 4
     dl = []
     for di in range(0, len(data), smoothing_window_size):
         window = data[di:di + smoothing_window_size]
@@ -80,7 +86,7 @@ def my_scaler(data: np.array) -> np.array:
     return np.concatenate(dl)
 
 
-def augum(path: str, rows_numers: list, scaling=True) -> np.array:
+def augum(path: str, rows_numers: list) -> np.array:
     """
     :param path:
     :param rows_numers:
@@ -106,16 +112,28 @@ def augum(path: str, rows_numers: list, scaling=True) -> np.array:
 if __name__ == '__main__':
     # 9 rows
     p = '/mnt/hit4/hit4user/PycharmProjects/my_pytorch_lstm/YNDX_191211_191223.csv'
-    data = augum(p, [7], scaling=True)
-    data = data[:2000, :]  # limit
+    data = augum(p, [7])
+    data = data[:500, :]  # limit
     # replace date
     dat = list(range(data.shape[0]))
     data[:, 0] = scaler_simple(dat)
+    # test
+    # data[:, 1] = scaler_simple(dat)
+    # print(data[1101, 0])
 
     # SCALING
     data = my_scaler(data)  # (0,1)
+    # SMOOTHING
+    s = data[:, 1].copy()
+    data[:, 1] = savitzky_golay(data[:, 1], 87, 7)
     # save original
-    torch.save(data, open('traindata_ya2.pt', 'wb'))
+    torch.save(data, open('traindata_ya_orig.pt', 'wb'))
+
+    # PRINT origin
+
+    plt.plot(np.arange(data.shape[0]), s, 'r', linewidth=2.0)
+    plt.plot(np.arange(data.shape[0]), data[:, 1], 'b', linewidth=2.0)
+    plt.show()
 
     # BATCHING
 
@@ -136,26 +154,23 @@ if __name__ == '__main__':
     # u_data, u_labels = np.array(u_data), np.array(u_labels)
     # 4)
     from batching_gap import batches
-    u_data, u_labels = batches(data, 150, 900, offset=100, second_offset=2)
-
-    print(u_data.shape)  # (300, 10, 2) # steps, batchs, time/price
-    print(u_labels.shape)
-    batches = np.stack([u_data, u_labels], axis=1)
-    batches = [u_data, u_labels]
+    steps = 15
+    data_offset = 500//30  # 33
+    batch_size = 10
+    u_data, u_labels = batches(data, batch_size=batch_size, steps=steps, offset=data_offset, second_offset=5)
+    print("count",  len(u_data)*len(u_data[0]))
+    print("u_data", len(u_data))  # (300, 10, 2) # maxjor_steps, minor_steps, batchs, time/price
+    print("u_labels", len(u_labels))
+    print("u_labels", u_labels[1][1].shape)
+    # batches = np.stack([u_data, u_labels], axis=1)
+    batches = [u_data, u_labels, data_offset, batch_size]
     # print(batches)
 
-    data_res = np.array(batches)  # (2, 300, 10, 2) # train/test, steps, batchs, time/price
+    data_res = np.array(batches)  # (2, 300, 10, 2) # input/labels, steps, batchs, time/price
     print(data_res.shape)
-    torch.save(data_res, open('traindata_ya.pt', 'wb'))
 
-
-    # PRINT
-    # import matplotlib.pyplot as plt
-    # import matplotlib
-    # matplotlib.use('TkAgg')
-
-    # plt.plot(np.arange(data.shape[0]), data[:, 1], 'b', linewidth=2.0)
-    # plt.show()
+    torch.save(data_res, open('traindata_ya_batch.pt', 'wb'))
+    # print(data_res)
 
     # from matplotlib import pyplot as plt
     # plt.plot(range(len(train_data)), a)
