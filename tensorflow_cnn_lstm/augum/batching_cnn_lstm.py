@@ -20,7 +20,6 @@ def striding_windows_with_future(arr: list, w_size=5, future=5) -> dict:
     for di in range(len(arr) - w_size + 1 - future, len(arr) - w_size + 1):
         window = arr[di:di + w_size]
         x_without_y.append(window)
-
     ret = {"x": np.array(x), "y": np.array(y), "x_without_y": np.array(x_without_y)}
 
     return ret

@@ -69,21 +69,20 @@ def scaler_simple(data: np.array) -> np.array:
     return data
 
 
-def my_scaler(data: np.array) -> np.array:
+def scaler_sections(data: np.array, div=2) -> np.array:
     """ data close to 0 will not add much value to the learning process
+    # MAY BE smoothing_window_size * div < data.shape[0]
 
+    :param div:
     :param data: two dimensions 0 - time, 1 - prices
     :return:
     """
-
-    # data = scaler(data, axis=0)
-    smoothing_window_size = data.shape[0]  # // 2  # for 10000 - 4
+    length = data.shape[0]
+    smoothing_window_size = length // div  # for 10000 - 4
     dl = []
-    for di in range(0, len(data), smoothing_window_size):
+    for di in range(0, length, smoothing_window_size):
         window = data[di:di + smoothing_window_size]
-        # print(window.shape)
-        window = scaler(window, axis=1)
-        # print(window[0], window[-1])
+        window = scaler_simple(window)
         dl.append(window)  # last line will be shorter
 
     return np.concatenate(dl)
@@ -102,45 +101,54 @@ def augum(path: str, rows_numers: list) -> np.array:
     with open(path, 'r') as f:
         reader = csv.reader(f, delimiter=',', quoting=csv.QUOTE_NONE)
         for i, row in enumerate(reader):
-            if i == 0:
+            if i == 0:  # skip header
                 continue
-
             line = []
-            # time = 0 #float(int(row[2]) + float(row[3]) / (10 ** 6))
-            # line.append(time)
+
+            # YEAR DATE
+            date = (int(row[2][4:]) - 101) / 1130  # ~ [0 1] scaler_simple
+
+            # DAY TIME
+            time = (int(row[3]) - 101000) / 84000  # ~ [0 1] scaler_simple
+
+            # ALL ROWS
             for x in rows_numers:
-                line.append(float(row[x]))
+                if x == 3:
+                    line.append(time)
+                else:
+                    line.append(float(row[x]))
+
+            line.append(date)
             data.append(line)  # list of selected rows
     return np.array(data)
 
 
 def main():
     # 9 rows
-    p = '/home/u2/Downloads/ALRS_170123_200130.csv'
-    lim = 200
-    data_full = augum(p, [7, 8, 4, 5, 6])  # steps, time/price/volume
+    # https://www.finam.ru/profile/moex-indeksy/mcxsm/export/
+    mcxsm = ''
+    p = '/home/u2/Downloads/APTK_140101_200218(1).txt'
+    lim = 0
+    data_full = augum(p, [7, 8, 3, 4, 5, 6])[:]  # steps, price/volume/etc..
     print(data_full.shape)  # (6819, 3)
-    # replace date
-    dat = list(range(data_full.shape[0]))
-    # data_full[:, 0] = scaler_simple(dat)
-    # TEST replace price
-    # data_full[:, 0] = scaler_simple(dat)
 
-    # SELECT DATA FOR LSTM - price/volume
-    data = data_full[:, 0:2].copy()
-
-    # SCALING
-    # data = my_scaler(data)  # (0,1)
-    data[:, 0] = scaler_simple(data[:, 0])  # price
-    data[:, 1] = scaler_simple(data[:, 1])  # value
     # CNN scalling
-    for d in range(data_full.shape[1]):
-        data_full[:, d] = scaler_simple(data_full[:, d])  # value
-        data_full[:, d] = savitzky_golay(data_full[:, d], 11, 3)
+    div = 10
+    # fix rare error
+    s = (data_full.shape[0] // div) * div
+    if s < data_full.shape[0]:
+        data_full = data_full[:s]
+    # SCALE AND SMOOTH
 
-    # SMOOTHING
-    data[:, 0] = savitzky_golay(data[:, 0], 11, 3)
-    data[:, 1] = savitzky_golay(data[:, 1], 11, 3)
+    for d in range(data_full.shape[1]):
+        data_full[:, d] = scaler_sections(data_full[:, d], div)  # value
+    data_full_orig = data_full.copy()
+    for d in range(data_full.shape[1]):
+        data_full[:, d] = savitzky_golay(data_full[:, d], window_size=31, order=0.5)
+    #
+    data = data_full[:, 0:2].copy()
+    # data[:, 0] = savitzky_golay(data[:, 0], 11, 3)
+    # data[:, 1] = savitzky_golay(data[:, 1], 11, 3)
     # PLOT
     # plt.plot(np.arange(data.shape[0]), s, 'r', linewidth=2.0)
     # plt.plot(np.arange(data.shape[0]), data[:, 1], 'b', linewidth=2.0)
@@ -173,11 +181,13 @@ def main():
 
     limit = data_full.shape[0] - lim  # for testing
     future = 250
-    w_size = 30
+    w_size = 40
     ret = striding_windows_with_future(data_full[:limit], w_size=w_size, future=future)  # two dimension
     print(ret['x'].shape, ret['y'].shape, ret['x_without_y'].shape)
-    np.savez('../1sw', x=ret['x'], y=ret['y'], x_without_y=ret['x_without_y'], w_size=w_size, future=future)
+    np.savez('../1sw', x=ret['x'], y=ret['y'], x_without_y=ret['x_without_y'], w_size=w_size, future=future, file_path=p)
     # print(ret['y'][:, 0, 0])
+
+    plt.plot(range(data_full_orig.shape[0]), data_full_orig[:, 0], 'k')
     plt.plot(range(data_full.shape[0]), data_full[:, 0], 'b')
     plt.plot(range(w_size+future, len(ret['y'][:, 0, 0]) + w_size+future), ret['y'][:, 0, 0], 'r')
     plt.show()

@@ -17,54 +17,61 @@ class CNN_LSTM(Model):
         self.c0 = layers.LocallyConnected2D(  # input (samples, rows, cols, channels)
             filters=4,
             kernel_size=2)
-        self.relu1 = layers.ReLU()
-        self.mp0 = layers.MaxPool2D(pool_size=(2, 1))
+        # self.relu0 = layers.ReLU()
+        self.mp0 = layers.AveragePooling2D(pool_size=(2, 1))
+        self.d0 = layers.Dropout(0.1)
         self.c1 = layers.LocallyConnected2D(  # input (samples, rows, cols, channels)
             filters=8,
             kernel_size=2)
         # self.bn1 = layers.BatchNormalization(axis=1)
-        self.relu2 = layers.ReLU()
-        self.mp1 = layers.MaxPool2D(pool_size=(2, 1))
+        self.relu1 = layers.ReLU()
+        self.mp1 = layers.AveragePooling2D(pool_size=(2, 1))
+        self.d1 = layers.Dropout(0.1)
         self.c2 = layers.LocallyConnected2D(  # input (samples, rows, cols, channels)
             filters=16,
             kernel_size=2)
-        self.relu3 = layers.ReLU()
-        self.mp2 = layers.MaxPool2D(pool_size=(2, 1))
-        self.d = layers.Dropout(0.2)
+        self.mp2 = layers.AveragePooling2D(pool_size=(2, 1))
+        self.d2 = layers.Dropout(0.3)
         # self.bn2 = layers.BatchNormalization(axis=1)
         self.fl = layers.Flatten()
+        self.relu2 = layers.ReLU()
         self.out_cnn = layers.Dense(25)
 
         # self.out_cnn = layers.Dense(1)
 
         # RNN (LSTM) hidden layer.
-        self.lstm_layer1 = layers.LSTM(units=150, return_sequences=True, stateful=True, name="lstm1", dropout=0.1)
-        self.lstm_layer2 = layers.LSTM(units=150, return_sequences=True, stateful=True, name="lstm2", dropout=0.1)
-        self.lstm_layer3 = layers.LSTM(units=150, return_sequences=True, stateful=True, name="lstm2", dropout=0.1)
-        # self.lstm_layer4 = layers.LSTM(units=32, return_sequences=True, stateful=True)
+        self.lstm_layer1 = layers.LSTM(units=200, return_sequences=True, stateful=True, name="lstm1", dropout=0.3)
+        self.lstm_layer2 = layers.LSTM(units=200, return_sequences=True, stateful=True, name="lstm2", dropout=0.3)
+        # self.lstm_layer3 = layers.LSTM(units=150, return_sequences=True, stateful=True, name="lstm2", dropout=0.3)
         self.fl2 = layers.Flatten(name="lstm_fl")
 
-        self.out_lstm = layers.Dense(50, name="lstm_d1")
+        self.out_lstm = layers.Dense(25, name="lstm_d1")
+
+        self.lstm_layer4 = layers.LSTM(units=200, return_sequences=True, stateful=True, dropout=0.3)
+        self.fl3 = layers.Flatten()
+        # self.final = layers.Dense(1024)
         self.out = layers.Dense(2)
 
     # Set forward pass.
-    def call(self, inp, is_training=False)  :
+    def call(self, inp, is_training=False):
         x, x2 = inp
         # x2 = inp
         # x = x2
 
         # CNN -------------------
         x = self.c0(x)
-        x = self.relu1(x)
+        # x = self.relu0(x)
         x = self.mp0(x)
+        x = self.d0(x)
         x = self.c1(x)
-        x = self.relu2(x)
+        x = self.relu1(x)
         x = self.mp1(x)
+        x = self.d1(x)
         x = self.c2(x)
-        x = self.relu3(x)
         x = self.mp2(x)
-        x = self.d(x)
+        x = self.d2(x)
         x = self.fl(x)
+        x = self.relu2(x)
         x = self.out_cnn(x)
 
         if not is_training:  # tpremove CNN None batch dimension
@@ -77,15 +84,19 @@ class CNN_LSTM(Model):
         # LSTM layer ---------------
         x2 = self.lstm_layer1(x2)
         x2 = self.lstm_layer2(x2)
-        x2 = self.lstm_layer3(x2)
+        # x2 = self.lstm_layer3(x2)
         x2 = self.fl2(x2)
         x2 = self.out_lstm(x2)
 
         # concatenate -------------
         x = layers.concatenate([x2, x])
 
-        # x = self.out(tf.nn.relu(x))
-        x = self.out(x)
+        x = tf.expand_dims(x, -2)
+        x = self.lstm_layer4(x)
+        x = self.fl3(x)
+
+        # x = self.final(tf.nn.relu(x))
+        x = self.out(tf.nn.relu(x))
 
         return x
 
@@ -107,7 +118,7 @@ def cuda():
         try:
             tf.config.experimental.set_virtual_device_configuration(
                 gpus[0],
-                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4300)])
+                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4800)])
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
             print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
@@ -120,7 +131,7 @@ def cuda():
 
 if __name__ == '__main__':
     BATCH_SIZE = 20
-    STEPS = 3
+    STEPS = 2
     # LOAD
     # import torch
     # data = torch.load('traindata.pt')  # N=100, L=1000
@@ -134,18 +145,20 @@ if __name__ == '__main__':
     x_wind_least = l['x_without_y']  # steps, window_size, features
     w_size = l['w_size']
     future = l['future']
+    file_path: str = str(l['file_path'])
+    print(file_path)
     print(x_wind.shape, y_wind.shape, w_size, future)
 
     # PREPARE
     test_st = 0  # test
     train_st = x_wind.shape[0] - test_st  # train
     # CNN
-    yw_train = y_wind[:, :, 0:2]  # batches, lstm/cnn, price/volume
+    yw_train = y_wind[:, :, 0:3]  # batches, lstm/cnn, price/volume
     # print("wtf", yw_train.shape)
     xw_train: np.array = x_wind[:train_st]  # (2, 499)
     yw_train: np.array = yw_train[:train_st]  # (2, 499)
     xw_test: np.array = x_wind[train_st:]  # (2, 499)
-    yw_test: np.array = y_wind[train_st:, :, 0:2]  # (2, 499)
+    yw_test: np.array = y_wind[train_st:, :, 0:3]  # (2, 499)
     # xw_train = np.expand_dims(xw_train, -1)  # add channels
     # yw_train = np.expand_dims(yw_train, -1)
     print("xw_train", xw_train.shape)
@@ -155,11 +168,6 @@ if __name__ == '__main__':
     cuda()
 
     # TRAIN -----------
-    # LSTM
-    # print(x_train.shape)  # (1399, 1, 2)
-    # train_data = tf.data.Dataset.from_tensor_slices((x_train, y_train))
-    # train_data = train_data.batch(BATCH_SIZE, drop_remainder=True) #.prefetch(BATCH_SIZE)  # .shuffle(5000) repeat()    # print(train_data.take(1))
-
     # CNN
     # print("wtf", yw_train.shape)  # (1399, 1, 2)
     train_data_w = tf.data.Dataset.from_tensor_slices((xw_train, yw_train))
@@ -169,21 +177,13 @@ if __name__ == '__main__':
     # exit()
 
     # Build models.
-    # cnn_net = CNNwind()
-    # lstm_net = LSTMmodel()
     unio_net = CNN_LSTM()
     # optimizer = tf.optimizers.Adam(learning_rate=0.00008, beta_1=0.1, beta_2=0.1, epsilon=1e-3)
     # optimizer = tf.optimizers.SGD(learning_rate=0.015, decay=0.6, momentum=0.3)
     # optimizer_lstm = tf.optimizers.Adam(learning_rate=0.00001) #SGD(learning_rate=0.006, decay=0.003, momentum=0.3)
     # optimizer = tf.optimizers.Adam(learning_rate=0.00025)  # LSTM
     # optimizer = tf.optimizers.Adam(learning_rate=0.0001)  # CNN
-    optimizer = tf.optimizers.Adam(learning_rate=0.00001)
-
-    def my_loss(x, y):
-        loss = tf.keras.losses.MSLE(y, x)
-        # print(loss)
-        # Average loss across the batch.
-        return tf.reduce_mean(loss)
+    optimizer = tf.optimizers.Adam(learning_rate=0.00000951)
 
     # Accuracy metric.
     def accuracy(y_pred, y_true):
@@ -204,24 +204,16 @@ if __name__ == '__main__':
         global pred_u
         # Wrap computation inside a GradientTape for automatic differentiation.
         # print(y.shape)
-        with tf.GradientTape() as g:
-            # Forward pass.
-            x = np.expand_dims(x, -1)  # (50, 30, 5, 1)
-            # print(x.shape)  # (50, 30, 5, 1)
 
-            x_l = y[:, np.newaxis, 0, :]
-            y = y[:, 1, 0]  # price
-            # y = y[:, 1, :]  # price and volume
+        # Forward pass.
+        x = np.expand_dims(x, -1)  # (50, 30, 5, 1)
+        # print(x.shape)  # (50, 30, 5, 1)
 
-            # x = np.expand_dims(x, -1)
-            # PREDICT
-            # pred_cnn = cnn_net(x, is_training=True)  # (50, 28, 1, 1)
-            # pred_lstm = lstm_net(x_l, is_training=True)  # (50, 1, 2)
-            # print(pred_cnn.shape, pred_lstm.shape)
-            # print(x.shape, x_l.shape)
+        x_l = y[:, np.newaxis, 0, :]  # lstm
+        y = y[:, 1, 0]  # price
 
-            # pred_u = pred_u[:, np.newaxis, :]
-            # print(x.shape, pred_u.shape)
+        # y = y[:, 1, :]  # price and volume
+        with tf.GradientTape() as tape:
             pred_u = unio_net((x, x_l), is_training=True)
             # pred_u = unio_net((x, pred_u), is_training=True)
             # print("pred_u", pred_u.shape)
@@ -230,7 +222,9 @@ if __name__ == '__main__':
             # print(c.shape)
 
             # Compute loss.
-            loss = my_loss(pred_u[:, 0], y)
+            loss = tf.keras.losses.MSLE(y, pred_u[:, 0])
+            loss = tf.reduce_mean(loss)
+            # loss = my_loss(pred_u[:, 0], y)
 
         # Variables to update, i.e. trainable variables.
         # lstm_trainable_variables = []
@@ -254,14 +248,11 @@ if __name__ == '__main__':
         # optimizer_othr.apply_gradients(zip(grads2, other_trainable_variables))
         # ONE
         trainable_variables_union = unio_net.trainable_variables
-        gradients = g.gradient(loss, trainable_variables_union)
+        gradients = tape.gradient(loss, trainable_variables_union)
         optimizer.apply_gradients(zip(gradients, trainable_variables_union))
         return loss
 
-
-    # Run training for the given number of steps.
-    training_steps = 1000*100
-    # display_step = 100
+    # TRAIN
     for i in range(STEPS):
         # pred_u = np.zeros((BATCH_SIZE, 2))
         for step, (batch_x, batch_y) in enumerate(train_data_w.take(-1)):  # (batch, steps, inputs)
@@ -280,9 +271,9 @@ if __name__ == '__main__':
         # print("lr: %f" % lr)
         unio_net.lstm_layer1.reset_states()
         unio_net.lstm_layer2.reset_states()
-        unio_net.lstm_layer3.reset_states()
+        # unio_net.lstm_layer3.reset_states()
+        unio_net.lstm_layer4.reset_states()
 
-    # lstm_net.lstm_layer.reset_states([np.zeros((1, 132)), np.zeros((1, 132))])
     print("TESTING")
     # xw_train (400, 30, 5)
     # yw_train (400, 2, 2)
@@ -305,63 +296,72 @@ if __name__ == '__main__':
     unio_net2.set_weights(old_weights)
     unio_net2.reset_states()
 
-    # TRAIN OUT
-    res = []
-    # r = np.zeros((1, 2))
-    for i in range(xw_train.shape[0]):
-        x = xw_train[i]
-        y = yw_train[i]  # 2, 2
-        x1 = x[np.newaxis, :, :, np.newaxis]
-        # print(y.shape)
-        x2 = y[np.newaxis, np.newaxis, 0, :]
-        # r = r[:, np.newaxis, :]
-        # print(x1.shape, x2.shape)  # (30, 5) (2, 2)
-        r = unio_net2.predict_on_batch([x1, x2])
-        res.append(r)
-    res = np.array(res)
-    # print(res.shape)  # (400, 1, 2)
-    train = res[:, 0, 0]
-    # print(train.shape)
-
-    # TEST
-    if test_st != 0:
+    # FULL PREDICT
+    for i in range(2, 183, 60):
+        # TRAIN OUT unroll to be prepared for predict
         res = []
-        for i in range(xw_test.shape[0]):
-            x = xw_test[i]
-            y = yw_test[i]  # 2, 2
+        # r = np.zeros((1, 2))
+        na = xw_train.shape[0] - xw_train.shape[0]//i
+        for i in range(na, xw_train.shape[0]):
+            x = xw_train[i]
+            y = yw_train[i]  # 2, 2
             x1 = x[np.newaxis, :, :, np.newaxis]
             # print(y.shape)
             x2 = y[np.newaxis, np.newaxis, 0, :]
             # r = r[:, np.newaxis, :]
+            # print(x1.shape, x2.shape)  # (30, 5) (2, 2)
             r = unio_net2.predict_on_batch([x1, x2])
-            # r = unio_net2.predict_on_batch([x1, r])
             res.append(r)
         res = np.array(res)
-        # print(res.shape)  # (400, 1, 2)
-        test = res[:, 0, 0]
-        # print(test.shape)
+        print(res.shape)  # (400, 1, 2)
+        train = res[:, 0, 0]
+        # print(train.shape)
 
-    # PREDICT
-    res2 = []
-    print(r.shape)
-    for i in range(x_wind_least.shape[0]):
-        x = x_wind_least[i]
-        x1 = x[np.newaxis, :, :, np.newaxis]
-        r = r[:, np.newaxis, :]
+        # TEST ( optional)
+        if test_st != 0:
+            res = []
+            for i in range(xw_test.shape[0]):
+                x = xw_test[i]
+                y = yw_test[i]  # 2, 2
+                x1 = x[np.newaxis, :, :, np.newaxis]
+                # print(y.shape)
+                x2 = y[np.newaxis, np.newaxis, 0, :]
+                # r = r[:, np.newaxis, :]
+                r = unio_net2.predict_on_batch([x1, x2])
+                # r = unio_net2.predict_on_batch([x1, r])
+                res.append(r)
+            res = np.array(res)
+            # print(res.shape)  # (400, 1, 2)
+            test = res[:, 0, 0]
+            # print(test.shape)
+
+        # PREDICT
+        res2 = []
         # print(r.shape)
-        # print(x1.shape, x2.shape)  # (30, 5) (2, 2)
-        r = unio_net2.predict_on_batch([x1, r])
-        # print(r.shape)
-        res2.append(r)
-    res2 = np.array(res2)
-    # print(res.shape)  # (400, 1, 2)
-    pre = res2[:, 0, 0]
+        for i in range(x_wind_least.shape[0]):
+            x = x_wind_least[i]
+            x1 = x[np.newaxis, :, :, np.newaxis]
+            r = r[:, np.newaxis, :]
+            # print(r.shape)
+            # print(x1.shape, x2.shape)  # (30, 5) (2, 2)
+            r = unio_net2.predict_on_batch([x1, r])
+            # print(r.shape)
+            res2.append(r)
+        res2 = np.array(res2)
+        # print(res.shape)  # (400, 1, 2)
+        pre = res2[:, 0, 0]
+        # print(pre.shape)
+        plt.plot(np.arange(train_st + w_size + future + xw_test.shape[0], train_st + w_size + future + xw_test.shape[0] + len(pre)), pre, 'k', label="predict")
 
     plt.plot(np.arange(0, data.shape[1]), data[0, :], 'r', label="orig")
-    plt.plot(np.arange(w_size + future, train_st + w_size + future), train, 'g', label="train")
+    # plt.plot(np.arange(w_size + future, train_st + w_size + future), train, 'g', label="test")
     if xw_test.shape[0] != 0:
-        plt.plot(np.arange(train_st + w_size + future, train_st + w_size + future + xw_test.shape[0]), test, 'b', label="train")
-    plt.plot(np.arange(train_st + w_size + future + xw_test.shape[0], train_st + w_size + future + xw_test.shape[0] + len(pre)), pre, 'k', label="train")
+        plt.plot(np.arange(train_st + w_size + future, train_st + w_size + future + xw_test.shape[0]), test, 'b', label="test free")
+
+    # plt.plot(np.arange(train_st + w_size + future + xw_test.shape[0], train_st + w_size + future + xw_test.shape[0] + len(pre)), pre, 'k', label="predict")
+    plt.legend()
+    import os
+    plt.savefig(os.path.basename(file_path)+'.jpg')
     plt.show()
 
     # res = lstm_net2(data[:, :data.shape[1]-test_st - 1, :], is_training=False)
